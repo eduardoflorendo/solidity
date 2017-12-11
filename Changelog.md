@@ -25,7 +25,7 @@ Build System:
 
 Language Features:
  * Provide access to creation and runtime code of contracts via ``type(C).creationCode`` / ``type(C).runtimeCode``.
-
+ * ABI Decoder: The experimental decoder to truncate on out-of-bounds boolean input.
 
 Compiler Features:
  * Control Flow Graph: Warn about unreachable code.
