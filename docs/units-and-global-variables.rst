@@ -165,20 +165,23 @@ Mathematical and Cryptographic Functions
 ``ripemd160(bytes memory) returns (bytes20)``:
     compute RIPEMD-160 hash of the input
 ``ecrecover(bytes32 hash, uint8 v, bytes32 r, bytes32 s) returns (address)``:
-    recover the address associated with the public key from elliptic curve signature or return zero on error
+    recover the address associated with the public key from elliptic curve signature or return zero on error. Returns an ``address``, and not an ``address
+   payable``. See :ref:`address payable<address>` for conversion, in case you need to transfer funds to the recovered address.
     (`example usage <https://ethereum.stackexchange.com/q/1777/222>`_)
 
-.. note::
-   Function ``ecrecover`` returns an ``address``, and not an ``address
-   payable``. See :ref:`address payable<address>` for conversion, in case you need
-   to transfer funds to the recovered address.
+.. warning::
 
-It might be that you run into Out-of-Gas for ``sha256``, ``ripemd160`` or ``ecrecover`` on a *private blockchain*. The reason for this is that those are implemented as so-called precompiled contracts and these contracts only really exist after they received the first message (although their contract code is hardcoded). Messages to non-existing contracts are more expensive and thus the execution runs into an Out-of-Gas error. A workaround for this problem is to first send e.g. 1 Wei to each of the contracts before you use them in your actual contracts. This is not an issue on the official or test net.
+    The ecrecover builtin still has the "high s" issue, i.e. you can take an existing signature and modify both v and s (IIRC) in a certain way, to get a different but equally valid signature.
+
+.. note::
+
+    When running ``sha256``, ``ripemd160`` or ``ecrecover`` on a *private blockchain*, you might encounter Out-of-Gas. This is because these function sare implemented as "precompiled contracts" and only really exist after they receive the first message (although their contract code is hardcoded). Messages to non-existing contracts are more expensive and thus the execution runs into an Out-of-Gas error. A workaround for this problem is to first send Wei (1 for example) to each of the contracts before you use them in your actual contracts. This is not an issue on the official or test net.
 
 .. note::
     There used to be an alias for ``keccak256`` called ``sha3``, which was removed in version 0.5.0.
 
 .. index:: balance, send, transfer, call, callcode, delegatecall, staticcall
+
 .. _address_related:
 
 Members of Address Types
