@@ -89,7 +89,9 @@ public:
 private:
 	struct EncodingOptions
 	{
-		/// Pad/signextend value types and bytes/string to multiples of  32 bytes.
+		/// Pad/signextend value types and bytes/string to multiples of 32 bytes.
+		/// If false, data is always left-aligned.
+		/// Note that this is always re-set to true for the elements of arrays and structs.
 		bool padded = true;
 		/// Store arrays and structs in place without "data pointer" and do not store the length.
 		bool dynamicInplace = false;
@@ -211,6 +213,10 @@ private:
 	/// or memory to memory.
 	/// Pads with zeros and might write more than exactly length.
 	std::string copyToMemoryFunction(bool _fromCalldata);
+
+	/// @returns the name of a function that takes a (cleaned) value of the given type and left-aligns
+	/// it, usually for use in non-padded encoding.
+	std::string leftAlignFunction(Type const& _type);
 
 	std::string shiftLeftFunction(size_t _numBits);
 	std::string shiftRightFunction(size_t _numBits);
