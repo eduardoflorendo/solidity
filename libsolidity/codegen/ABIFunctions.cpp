@@ -306,12 +306,14 @@ string ABIFunctions::validatorFunction(Type const& _type, bool _revertOnFailure)
 			if (type.numBits() == 256)
 				templ("body", "cleaned := value");
 			else if (type.isSigned())
+				// negate and see if higher bits are set
 				templ("body", "cleaned := signextend(" + to_string(type.numBits() / 8 - 1) + ", value)");
 			else
 				templ("body", "cleaned := and(value, " + toCompactHexWithPrefix((u256(1) << type.numBits()) - 1) + ")");
 			break;
 		}
 		case Type::Category::RationalNumber:
+			// FIXME: implement this validation
 			templ("body", "cleaned := value");
 			break;
 		case Type::Category::Bool:
