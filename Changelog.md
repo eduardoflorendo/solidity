@@ -10,6 +10,7 @@ Language Features:
 
 
 Compiler Features:
+ * Implement packed encoding for ABIEncoderV2.
  * C API (``libsolc`` / raw ``soljson.js``): Introduce ``solidity_free`` method which releases all internal buffers to save memory.
 
 
