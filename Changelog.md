@@ -13,6 +13,7 @@ Bugfixes:
 Build System:
  * Add support for continuous fuzzing via Google oss-fuzz
  * Add parser that is used in the file-based unit test environment.
+ * Tests: Add infrastructure for file-based semantic tests.
 
 
 ### 0.5.3 (2019-01-22)
