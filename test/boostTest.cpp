@@ -79,6 +79,7 @@ int registerTests(
 {
 	int numTestsAdded = 0;
 	fs::path fullpath = _basepath / _path;
+	TestCase::Config config{fullpath.string(), ""};
 	if (fs::is_directory(fullpath))
 	{
 		test_suite* sub_suite = BOOST_TEST_SUITE(_path.filename().string());
@@ -96,13 +97,13 @@ int registerTests(
 
 		filenames.emplace_back(new string(_path.string()));
 		_suite.add(make_test_case(
-			[fullpath, _testCaseCreator]
+			[config, _testCaseCreator]
 			{
 				BOOST_REQUIRE_NO_THROW({
 					try
 					{
 						stringstream errorStream;
-						if (!_testCaseCreator(fullpath.string())->run(errorStream))
+						if (!_testCaseCreator(config)->run(errorStream))
 							BOOST_ERROR("Test expectation mismatch.\n" + errorStream.str());
 					}
 					catch (boost::exception const& _e)

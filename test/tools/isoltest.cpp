@@ -114,7 +114,8 @@ TestTool::Result TestTool::process()
 
 	try
 	{
-		m_test = m_testCaseCreator(m_path.string());
+		TestCase::Config config{m_path.string(), ""};
+		m_test = m_testCaseCreator(config);
 		success = m_test->run(outputMessages, "  ", m_formatted);
 	}
 	catch(boost::exception const& _e)
