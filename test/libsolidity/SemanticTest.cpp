@@ -84,15 +84,15 @@ bool SemanticTest::run(ostream& _stream, string const& _linePrefix, bool const _
 		FormattedScope(_stream, _formatted, {BOLD, CYAN}) << _linePrefix << "Expected result:" << endl;
 		for (auto const& test: m_tests)
 		{
-			printFunctionCall(_stream, test.call, _linePrefix);
-			printFunctionCallTest(_stream, test, true, _linePrefix, _formatted);
+			printFunctionCallHighlighted(_stream, test.call, _linePrefix);
+			printFunctionCallTestHighlighted(_stream, test, true, _linePrefix, _formatted);
 		}
 
 		FormattedScope(_stream, _formatted, {BOLD, CYAN}) << _linePrefix << "Obtained result:" << endl;
 		for (auto const& test: m_tests)
 		{
-			printFunctionCall(_stream, test.call, _linePrefix);
-			printFunctionCallTest(_stream, test, false, _linePrefix, _formatted);
+			printFunctionCallHighlighted(_stream, test.call, _linePrefix);
+			printFunctionCallTestHighlighted(_stream, test, false, _linePrefix, _formatted);
 		}
 		return false;
 	}
@@ -111,8 +111,8 @@ void SemanticTest::printUpdatedExpectations(ostream& _stream, string const& _lin
 {
 	for (auto const& test: m_tests)
 	{
-		printFunctionCall(_stream, test.call, _linePrefix);
-		printFunctionCallTest(_stream, test, false, _linePrefix);
+		printFunctionCallHighlighted(_stream, test.call, _linePrefix);
+		printFunctionCallTestHighlighted(_stream, test, false, _linePrefix);
 	}
 }
 
@@ -121,16 +121,16 @@ void SemanticTest::parseExpectations(istream& _stream)
 {
 	TestFileParser parser{_stream};
 	for (auto const& call: parser.parseFunctionCalls())
-		m_tests.emplace_back(FunctionCallTest{std::move(call), false, bytes{}, string{}});
+		m_tests.emplace_back(FunctionCallTest{call, bytes{}, string{}});
 }
 
 bool SemanticTest::deploy(string const& _contractName, u256 const& _value, bytes const& _arguments)
 {
-	auto output = compileAndRunWithoutCheck(m_source, _value, _contractName, _arguments, m_libraryAddresses);
+	auto output = compileAndRunWithoutCheck(m_source, _value, _contractName, _arguments);
 	return !output.empty() && m_transactionSuccessful;
 }
 
-void SemanticTest::printFunctionCall(ostream& _stream, FunctionCall const& _call, string const& _linePrefix) const
+void SemanticTest::printFunctionCallHighlighted(ostream& _stream, FunctionCall const& _call, string const& _linePrefix) const
 {
 	_stream << _linePrefix << _call.signature;
 	if (_call.value > u256(0))
@@ -142,10 +142,10 @@ void SemanticTest::printFunctionCall(ostream& _stream, FunctionCall const& _call
 	_stream << endl;
 }
 
-void SemanticTest::printFunctionCallTest(
+void SemanticTest::printFunctionCallTestHighlighted(
 	ostream& _stream,
 	FunctionCallTest const& _test,
-	bool _expected,
+	bool _printExcepted,
 	string const& _linePrefix,
 	bool const _formatted
 ) const
@@ -153,7 +153,7 @@ void SemanticTest::printFunctionCallTest(
 	_stream << _linePrefix;
 	if (_formatted && !_test.matchesExpectation())
 		_stream << formatting::RED_BACKGROUND;
-	string output = _expected ? _test.call.expectations.output : _test.output;
+	string output = _printExcepted ? _test.call.expectations.output : _test.output;
 	_stream << boost::algorithm::trim_copy(output);
 	if (_formatted && !_test.matchesExpectation())
 		_stream << formatting::RESET;

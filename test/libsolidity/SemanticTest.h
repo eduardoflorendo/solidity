@@ -33,11 +33,17 @@ namespace solidity
 namespace test
 {
 
+/**
+ * Class that represents a semantic test (or end-to-end test) and allows running it as part of the
+ * boost unit test environment or isoltest. It reads the Solidity source and an additional comment
+ * section from the given file. This comment section should define a set of functions to be called
+ * and an expected result they return after being executed.
+ */
 class SemanticTest: public SolidityExecutionFramework, public TestCase
 {
 public:
 	static std::unique_ptr<TestCase> create(Config const& _options)
-	{ return std::unique_ptr<TestCase>(new SemanticTest(_options.filename, _options.ipcPath)); }
+	{ return std::make_unique<SemanticTest>(_options.filename, _options.ipcPath); }
 
 	explicit SemanticTest(std::string const& _filename, std::string const& _ipcPath);
 
@@ -46,17 +52,28 @@ public:
 	void printUpdatedExpectations(std::ostream& _stream, std::string const& _linePrefix = "") const override;
 
 private:
+	/**
+	 * Represents a function call and the result it returned. It stores the call
+	 * representation itself, the actual byte result (if any) and a string representation
+	 * used for the interactive update routine provided by isoltest. It also provides
+	 * functionality to compare the actual result with the expectations attached to the
+	 * call object, as well as a way to reset the result if executed multiple times.
+	 */
 	struct FunctionCallTest
 	{
 		FunctionCall call;
-		bool status;
 		bytes rawBytes;
 		std::string output;
+		bool status = false;
+		/// Compares raw expectations (which are converted to a byte representation before),
+		/// and also the expected transaction status of the function call to the actual test results.
 		bool matchesExpectation() const
 		{
 			auto expectedByteFormat = TestFileParser::formattedStringToBytes(call.expectations.raw);
 			return status == call.expectations.status && rawBytes == expectedByteFormat.first;
 		}
+		/// Resets current results in case the function was called and the result
+		/// stored already (e.g. if test case was updated via isoltest).
 		void reset()
 		{
 			status = false;
@@ -65,20 +82,34 @@ private:
 		}
 	};
 
+	/// Instantiates a test file parser that parses the additional comment section at the end of
+	/// the input stream \param _stream. Each function call is represented using a `FunctionCallTest`
+	/// and added to the list of call to be executed when `run()` is called.
+	/// Throws if parsing expectations failed.
 	void parseExpectations(std::istream& _stream);
+
+	/// Compiles and deploys currently held source.
+	/// Returns true if deployment was successful, false otherwise.
 	bool deploy(std::string const& _contractName, u256 const& _value, bytes const& _arguments);
 
-	void printFunctionCall(std::ostream& _stream, FunctionCall const& _call, std::string const& _linePrefix = "") const;
-	void printFunctionCallTest(
+	/// Prints a formatted and highlighted function call used for visual feedback in isoltest.
+	void printFunctionCallHighlighted(
+		std::ostream& _stream,
+		FunctionCall const& _call,
+		std::string const& _linePrefix = ""
+	) const;
+
+	/// Prints a formatted and highlighted function call test used for visual feedback in isoltest.
+	/// If \param _printExpected is true, it prints the expected result instead of the actual result.
+	void printFunctionCallTestHighlighted(
 		std::ostream& _stream,
 		FunctionCallTest const& test,
-		bool _expected,
+		bool _printExpected,
 		std::string const& _linePrefix = "",
 		bool const _formatted = false
 	) const;
 
 	std::string m_source;
-	std::map<std::string, dev::test::Address> m_libraryAddresses;
 	std::vector<FunctionCallTest> m_tests;
 };
 
