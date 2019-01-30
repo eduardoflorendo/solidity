@@ -55,67 +55,62 @@ BOOST_AUTO_TEST_CASE(smoke_test)
 BOOST_AUTO_TEST_CASE(simple_call_succees)
 {
 	char const* source = R"(
-		// f()
-		// -> 1
+		// f(uint256, uint256): 1, 1
+		// ->
 	)";
-	auto const& calls = parse(source);
+
+	auto const calls = parse(source);
 	BOOST_CHECK_EQUAL(calls.size(), 1);
 
-	auto const& call = calls.at(0);
-	BOOST_CHECK_EQUAL(call.signature, "f()");
-	BOOST_CHECK_EQUAL(call.expectations.output, "-> 1");
-	BOOST_CHECK_EQUAL(call.expectations.raw, "1");
+	auto call = calls.at(0);
+	ABI_CHECK(call.arguments.rawBytes, toBigEndian(u256{1}) + toBigEndian(u256{1}));
+	BOOST_CHECK_EQUAL(call.signature, "f(uint256,uint256)");
 }
 
 BOOST_AUTO_TEST_CASE(non_existent_call_revert)
 {
 	char const* source = R"(
 		// i_am_not_there()
-		// REVERT
+		// -> FAILURE
 	)";
-	auto const& calls = parse(source);
+	auto const calls = parse(source);
 	BOOST_CHECK_EQUAL(calls.size(), 1);
 
 	auto const& call = calls.at(0);
 	BOOST_CHECK_EQUAL(call.signature, "i_am_not_there()");
-	BOOST_CHECK_EQUAL(call.expectations.output, "REVERT");
-	BOOST_CHECK_EQUAL(call.expectations.raw, "");
+	BOOST_CHECK_EQUAL(call.expectations.status, false);
 }
 
 BOOST_AUTO_TEST_CASE(call_comments)
 {
 	char const* source = R"(
-		// f() # This is a comment
-		// -> 1 # This is another comment
+		// f() # This is a comment #
+		// -> 1 # This is another comment #
 	)";
-	auto const& calls = parse(source);
+	auto const calls = parse(source);
 	BOOST_CHECK_EQUAL(calls.size(), 1);
 
 	auto const& call = calls.at(0);
 	BOOST_CHECK_EQUAL(call.signature, "f()");
-	BOOST_CHECK_EQUAL(call.arguments.comment, "This is a comment");
-	BOOST_CHECK_EQUAL(call.expectations.output, "-> 1");
-	BOOST_CHECK_EQUAL(call.expectations.raw, "1");
-	BOOST_CHECK_EQUAL(call.expectations.comment, "This is another comment");
+	BOOST_CHECK_EQUAL(call.arguments.comment, " This is a comment ");
+	BOOST_CHECK_EQUAL(call.expectations.comment, " This is another comment ");
+	ABI_CHECK(call.expectations.rawBytes, toBigEndian(u256{1}));
 }
 
 BOOST_AUTO_TEST_CASE(call_arguments)
 {
 	char const* source = R"(
-		// f(uint256), 314 ether: 5 # optional ether value
-		// -> -4
+		// f(uint256), 314 ether: 5 # optional ether value #
+		// -> 4
 	)";
-	auto const& calls = parse(source);
+	auto const calls = parse(source);
 	BOOST_CHECK_EQUAL(calls.size(), 1);
 
 	auto const& call = calls.at(0);
 	BOOST_CHECK_EQUAL(call.signature, "f(uint256)");
 	BOOST_CHECK_EQUAL(call.value, u256{314});
-	BOOST_CHECK_EQUAL(call.arguments.raw, "5");
-	BOOST_CHECK_EQUAL(call.expectations.output, "-> -4");
-	BOOST_CHECK_EQUAL(call.expectations.raw, "-4");
 	ABI_CHECK(call.arguments.rawBytes, toBigEndian(u256{5}));
-	ABI_CHECK(call.expectations.rawBytes, toBigEndian(u256{-4}));
+	ABI_CHECK(call.expectations.rawBytes, toBigEndian(u256{4}));
 }
 
 BOOST_AUTO_TEST_CASE(call_expectations_missing)
@@ -162,71 +157,46 @@ BOOST_AUTO_TEST_CASE(call_ether_type_invalid)
 BOOST_AUTO_TEST_CASE(call_arguments_mismatch)
 {
 	char const* source = R"(
-		// f(uint256, uint256): 1 # This only throws at runtime
+		// f(uint256, uint256): 1 # This only throws at runtime #
 		// -> 1
 	)";
-	auto const& calls = parse(source);
+	auto const calls = parse(source);
 	BOOST_CHECK_EQUAL(calls.size(), 1);
 
 	auto const& call = calls.at(0);
-	BOOST_CHECK_EQUAL(call.signature, "f(uint256, uint256)");
-	BOOST_CHECK_EQUAL(call.arguments.raw, "1");
+	BOOST_CHECK_EQUAL(call.signature, "f(uint256,uint256)");
+	ABI_CHECK(call.arguments.rawBytes, toBigEndian(u256{1}));
 }
 
 BOOST_AUTO_TEST_CASE(call_multiple_arguments)
 {
 	char const* source = R"(
-		// f(uint256, uint256): 1, 2
+		// test(uint256, uint256): 1, 2
 		// -> 1, 1
 	)";
-	auto const& calls = parse(source);
+	auto const calls = parse(source);
 	BOOST_CHECK_EQUAL(calls.size(), 1);
 
 	auto const& call = calls.at(0);
-	BOOST_CHECK_EQUAL(call.signature, "f(uint256, uint256)");
-	BOOST_CHECK_EQUAL(call.arguments.raw, "1, 2");
+	BOOST_CHECK_EQUAL(call.signature, "test(uint256,uint256)");
 	ABI_CHECK(call.arguments.rawBytes, toBigEndian(u256{1}) + toBigEndian(u256{2}));
 }
 
 BOOST_AUTO_TEST_CASE(call_multiple_arguments_mixed_format)
 {
 	char const* source = R"(
-		// f(uint256, uint256),314 ether: -1, 2
-		// -> 1, -2
+		// test(uint256, uint256),314 ether: 1, -2
+		// -> -1, 2
 	)";
-	auto const& calls = parse(source);
+	auto const calls = parse(source);
 	BOOST_CHECK_EQUAL(calls.size(), 1);
 
 	auto const& call = calls.at(0);
-	BOOST_CHECK_EQUAL(call.signature, "f(uint256, uint256)");
+	BOOST_CHECK_EQUAL(call.signature, "test(uint256,uint256)");
 	BOOST_CHECK_EQUAL(call.value, u256{314});
-	BOOST_CHECK_EQUAL(call.arguments.raw, "-1, 2");
-	ABI_CHECK(call.arguments.rawBytes, toBigEndian(u256{-1}) + toBigEndian(u256{2}));
-	ABI_CHECK(call.expectations.rawBytes, toBigEndian(u256{1}) + toBigEndian(u256{-2}));
+	ABI_CHECK(call.arguments.rawBytes, toBigEndian(u256{1}) + toBigEndian(u256{-2}));
+	ABI_CHECK(call.expectations.rawBytes, toBigEndian(u256{-1}) + toBigEndian(u256{2}));
 }
-
-BOOST_AUTO_TEST_CASE(parser_convert_string_to_bytes)
-{
-	string raw{"1, -1"};
-	auto bytesFormat = TestFileParser::formattedStringToBytes(raw);
-	ABI_CHECK(bytesFormat.first, toBigEndian(u256{1}) + toBigEndian(u256{-1}));
-	BOOST_CHECK_EQUAL(bytesFormat.second.size(), 2);
-	BOOST_CHECK_EQUAL(bytesFormat.second.at(0).type, ByteFormat::UnsignedDec);
-	BOOST_CHECK_EQUAL(bytesFormat.second.at(1).type, ByteFormat::SignedDec);
-}
-
-BOOST_AUTO_TEST_CASE(parser_convert_bytes_to_string)
-{
-	bytes rawBytes = toBigEndian(u256{1}) + toBigEndian(u256{-1});
-	vector<ByteFormat> formats
-	{
-		ByteFormat{ByteFormat::UnsignedDec},
-		ByteFormat{ByteFormat::SignedDec}
-	};
-	string formatted = TestFileParser::bytesToFormattedString(rawBytes, formats);
-	BOOST_CHECK_EQUAL(formatted, "1,-1");
-}
-
 
 BOOST_AUTO_TEST_SUITE_END()
 

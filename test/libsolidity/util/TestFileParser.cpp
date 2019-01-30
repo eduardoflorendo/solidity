@@ -34,268 +34,343 @@ using namespace std;
 
 namespace
 {
-	void expect(string::iterator& _it, string::iterator _end, string::value_type _c)
+	bool isDecimalDigit(char c)
 	{
-		if (_it == _end || *_it != _c)
-			throw Error(Error::Type::ParserError, string("Invalid test expectation. Expected: \"") + _c + "\".");
-		++_it;
+		return '0' <= c && c <= '9';
 	}
-
-	template<typename IteratorType>
-	void skipWhitespace(IteratorType& _it, IteratorType _end)
+	bool isWhiteSpace(char c)
 	{
-		while (_it != _end && isspace(*_it))
-			++_it;
+		return c == ' ' || c == '\n' || c == '\t' || c == '\r';
 	}
-
-	template<typename IteratorType>
-	void skipSlashes(IteratorType& _it, IteratorType _end)
+	bool isIdentifierStart(char c)
 	{
-		while (_it != _end && *_it == '/')
-			++_it;
+		return c == '_' || c == '$' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
+	}
+	bool isIdentifierPart(char c)
+	{
+		return isIdentifierStart(c) || isDecimalDigit(c);
 	}
 }
-
-pair<bytes, ByteFormats> TestFileParser::formattedStringToBytes(string _string)
-{
-	bytes result;
-	vector<ByteFormat> formats;
-	auto it = _string.begin();
-	while (it != _string.end())
-	{
-		if (isdigit(*it) || (*it == '-' && (it + 1) != _string.end() && isdigit(*(it + 1))))
-		{
-			ByteFormat format;
-			format.type = ByteFormat::UnsignedDec;
-
-			bool isNegative = (*it == '-');
-			if (isNegative)
-				format.type = ByteFormat::SignedDec;
-
-			auto valueBegin = it;
-			while (it != _string.end() && !isspace(*it) && *it != ',')
-				++it;
-
-			bytes newBytes;
-			try {
-				u256 numberValue{string{valueBegin, it}};
-				// TODO: Convert to compact big endian if padded
-				if (numberValue == u256{0})
-					newBytes = bytes{0};
-				else
-					newBytes = toBigEndian(numberValue);
-				result += newBytes;
-				formats.push_back(std::move(format));
-			}
-			catch (std::exception const&)
-			{
-				throw Error(Error::Type::ParserError, "Argument encoding invalid.");
-			}
-		}
-		else
-			throw Error(Error::Type::ParserError, "Argument encoding invalid.");
-
-		skipWhitespace(it, _string.end());
-		if (it != _string.end())
-			expect(it, _string.end(), ',');
-		skipWhitespace(it, _string.end());
-	}
-	return make_pair(result, formats);
-}
-
-string TestFileParser::bytesToFormattedString(bytes const& _bytes, ByteFormats const& _formats)
-{
-	// TODO: Convert from compact big endian if padded
-	auto it = _bytes.begin();
-	stringstream resultStream;
-	for (auto const& format: _formats)
-	{
-		bytes byteRange{it, it + format.size};
-		switch(format.type)
-		{
-			case ByteFormat::SignedDec:
-				if (*byteRange.begin() & 0x80)
-				{
-					for (auto& v: byteRange)
-						v ^= 0xFF;
-					resultStream << "-" << fromBigEndian<u256>(byteRange) + 1;
-				}
-				else
-					resultStream << fromBigEndian<u256>(byteRange);
-				break;
-			case ByteFormat::UnsignedDec:
-				resultStream << fromBigEndian<u256>(byteRange);
-				break;
-		}
-		it += format.size;
-		if (it != _bytes.end())
-			resultStream << ",";
-	}
-	return resultStream.str();
-}
-
-
 
 vector<dev::solidity::test::FunctionCall> TestFileParser::parseFunctionCalls()
 {
 	vector<FunctionCall> calls;
-	while (advanceLine())
+	if (!accept(SoltToken::EOS))
 	{
-		if (m_scanner.eol())
-			continue;
+		// TODO: check initial token state
+		expect(SoltToken::Unknown);
+		while (!accept(SoltToken::EOS))
+		{
+			if (!accept(SoltToken::Whitespace))
+			{
+				FunctionCall call;
 
-		FunctionCall call;
-		call.signature = parseFunctionCallSignature();
-		if (auto optionalValue = parseFunctionCallValue())
-			call.value = optionalValue.get();
-		call.arguments = parseFunctionCallArguments();
+				// f()
+				expect(SoltToken::Newline);
+				call.signature = parseFunctionSignature();
 
-		if (!advanceLine())
-			throw Error(Error::Type::ParserError, "Expected result missing.");
-		call.expectations = parseFunctionCallExpectations();
+				// f(), 314 ether
+				if (accept(SoltToken::Comma, true))
+					call.value = parseFunctionCallValue();
 
-		if (call.expectations.status)
-			call.expectations.output = "-> " + call.expectations.raw;
-		else
-			call.expectations.output = "REVERT";
+				// f(), 314 ether: 1, 1
+				if (accept(SoltToken::Colon, true))
+					call.arguments = parseFunctionCallArguments();
 
-		calls.emplace_back(std::move(call));
+				string comment = m_scanner.currentLiteral();
+				if (accept(SoltToken::Comment, true))
+					call.arguments.comment = comment;
+
+				// -> 1
+				expect(SoltToken::Newline);
+				expect(SoltToken::Arrow);
+				if (m_scanner.peekToken() != SoltToken::Newline)
+				{
+					call.expectations = parseFunctionCallExpectations();
+
+					string comment = m_scanner.currentLiteral();
+					if (accept(SoltToken::Comment, true))
+						call.expectations.comment = comment;
+				}
+				calls.emplace_back(std::move(call));
+			}
+			else
+				m_scanner.scanNextToken();
+		}
 	}
 	return calls;
 }
 
-string TestFileParser::parseFunctionCallSignature()
+string TestFileParser::formatToken(SoltToken _token)
 {
-	string signature = parseUntilCharacter(')', true);
+	switch (_token)
+	{
+#define T(name, string, precedence) case SoltToken::name: return string;
+		SOLT_TOKEN_LIST(T, T)
+#undef T
+		default: // Token::NUM_TOKENS:
+			return "";
+	}
+}
+
+bool TestFileParser::accept(SoltToken _token, bool const _expect)
+{
+	if (m_scanner.currentToken() == _token)
+	{
+		if (_expect)
+			expect(_token);
+		return true;
+	}
+	return false;
+}
+
+bool TestFileParser::expect(SoltToken _token, bool const _advance)
+{
+	if (m_scanner.currentToken() != _token)
+		throw Error(Error::Type::ParserError,
+					"Unexpected " + formatToken(m_scanner.currentToken()) + ": \"" +
+					m_scanner.currentLiteral() + "\". " +
+					"Expected \"" + formatToken(_token) + "\"."
+					);
+	if (_advance)
+		m_scanner.scanNextToken();
+	return true;
+}
+
+string TestFileParser::parseFunctionSignature()
+{
+	string signature = m_scanner.currentLiteral();
+	expect(SoltToken::Identifier);
+
+	signature += formatToken(SoltToken::LParen);
+	expect(SoltToken::LParen);
+
+	while (!accept(SoltToken::RParen))
+	{
+		signature += m_scanner.currentLiteral();
+		expect(SoltToken::UInt);
+		while (accept(SoltToken::Comma))
+		{
+			signature += m_scanner.currentLiteral();
+			expect(SoltToken::Comma);
+			signature += m_scanner.currentLiteral();
+			expect(SoltToken::UInt);
+		}
+	}
+	signature += formatToken(SoltToken::RParen);
+	expect(SoltToken::RParen);
 	return signature;
+}
+
+u256 TestFileParser::parseFunctionCallValue()
+{
+	u256 value;
+	string literal = m_scanner.currentLiteral();
+	expect(SoltToken::Number);
+	value = convertNumber(literal);
+	expect(SoltToken::Ether);
+	return value;
 }
 
 FunctionCallArgs TestFileParser::parseFunctionCallArguments()
 {
-	skipWhitespaces();
-
 	FunctionCallArgs arguments;
-	if (!m_scanner.eol())
+
+	auto formattedBytes = parseABITypeLiteral();
+	arguments.rawBytes += formattedBytes.first;
+	arguments.formats.emplace_back(std::move(formattedBytes.second));
+	while (accept(SoltToken::Comma, true))
 	{
-		if (m_scanner.current() != '#')
-		{
-			expectCharacter(':');
-			skipWhitespaces();
-
-			string rawArguments = parseUntilCharacter('#');
-			boost::algorithm::trim(rawArguments);
-
-			auto bytesFormat = formattedStringToBytes(rawArguments);
-			arguments.raw = rawArguments;
-			arguments.rawBytes = bytesFormat.first;
-			arguments.formats = bytesFormat.second;
-		}
-
-		if (!m_scanner.eol())
-		{
-			expectCharacter('#');
-			skipWhitespaces();
-			arguments.comment = string(m_scanner.position(), m_scanner.endPosition());
-		}
+		auto formattedBytes = parseABITypeLiteral();
+		arguments.rawBytes += formattedBytes.first;
+		arguments.formats.emplace_back(std::move(formattedBytes.second));
 	}
 	return arguments;
 }
 
 FunctionCallExpectations TestFileParser::parseFunctionCallExpectations()
 {
-	FunctionCallExpectations result;
-	if (!m_scanner.eol() && m_scanner.current() == '-')
-	{
-		expectCharacter('-');
-		expectCharacter('>');
-		skipWhitespaces();
+	FunctionCallExpectations expectations;
+	string token = m_scanner.currentLiteral();
 
-		string rawExpectation = parseUntilCharacter('#');
-		boost::algorithm::trim(rawExpectation);
-		auto bytesFormat = formattedStringToBytes(rawExpectation);
-
-		result.raw = rawExpectation;
-		result.rawBytes = bytesFormat.first;
-		result.formats = bytesFormat.second;
-		result.status = true;
-
-		if (!m_scanner.eol())
-		{
-			expectCharacter('#');
-			skipWhitespaces();
-			result.comment = string(m_scanner.position(), m_scanner.endPosition());
-		}
-	}
+	if (accept(SoltToken::Failure, true))
+		expectations.status = false;
 	else
 	{
-		expectCharacterSequence("REVERT");
-		result.status = false;
+		auto formattedBytes = parseABITypeLiteral();
+		expectations.rawBytes += formattedBytes.first;
+		expectations.formats.emplace_back(std::move(formattedBytes.second));
+
+		while (accept(SoltToken::Comma, true))
+		{
+			auto formattedBytes = parseABITypeLiteral();
+			expectations.rawBytes += formattedBytes.first;
+			expectations.formats.emplace_back(std::move(formattedBytes.second));
+		}
 	}
-	return result;
+	return expectations;
 }
 
-boost::optional<u256> TestFileParser::parseFunctionCallValue()
+pair<bytes, ABIType> TestFileParser::parseABITypeLiteral()
 {
-	skipWhitespaces();
-	if (m_scanner.current() != ',')
-		return boost::none;
-	m_scanner.advance();
-
-	string rawEther = parseUntilCharacter(':');
-	boost::algorithm::trim(rawEther);
-
-	vector<string> tokens;
-	boost::split(tokens, rawEther, [](char c){ return c == ' '; });
-
-	if (tokens.size() != 2)
-		throw Error(Error::Type::ParserError, "Invalid ether declaration: " + rawEther);
-	if (tokens.at(1) != "ether")
-		throw Error(Error::Type::ParserError, "Value requires \"ether\" suffix.");
-
 	try
 	{
-		return u256{tokens.at(0)};
+		u256 number;
+		ABIType abiType;
+		if (accept(SoltToken::Sub))
+		{
+			abiType.type = ABIType::Type::SignedDec;
+			abiType.size = 32;
+
+			expect(SoltToken::Sub);
+			number = convertNumber(parseNumber()) * -1;
+		}
+		else
+			if (accept(SoltToken::Number))
+			{
+				abiType.type = ABIType::Type::UnsignedDec;
+				abiType.size = 32;
+
+				number = convertNumber(parseNumber());
+			}
+
+		return make_pair(toBigEndian(number), abiType);
 	}
-	catch (exception const&)
+	catch (std::exception const&)
 	{
-		throw Error(Error::Type::ParserError, "Cannot parse value: " + tokens.at(0));
+		throw Error(Error::Type::ParserError, "Number encoding invalid.");
 	}
-	return u256{};
 }
 
-bool TestFileParser::advanceLine()
+string TestFileParser::parseNumber()
 {
-	bool success = m_scanner.advanceLine();
-
-	skipWhitespaces();
-	skipSlashes(m_scanner.position(), m_scanner.endPosition());
-	skipWhitespaces();
-
-	return success;
+	string literal = m_scanner.currentLiteral();
+	expect(SoltToken::Number);
+	return literal;
 }
 
-void TestFileParser::expectCharacter(char const _char)
+u256 TestFileParser::convertNumber(string const& _literal)
 {
-	expect(m_scanner.position(), m_scanner.endPosition(), _char);
+	try {
+		return u256{_literal};
+	}
+	catch (std::exception const&)
+	{
+		throw Error(Error::Type::ParserError, "Number encoding invalid.");
+	}
 }
 
-void TestFileParser::expectCharacterSequence(string const& _charSequence)
+void TestFileParser::Scanner::readStream(istream& _stream)
 {
-	for (char c: _charSequence)
-		expectCharacter(c);
+	std::string line;
+	while (std::getline(_stream, line))
+		m_line += line;
+	m_char = m_line.begin();
 }
 
-string TestFileParser::parseUntilCharacter(char const _char, bool const _expect)
+void TestFileParser::Scanner::scanNextToken()
 {
-	auto begin = m_scanner.position();
-	while (!m_scanner.eol() && m_scanner.current() != _char)
-		m_scanner.advance();
-	if (_expect)
-		expectCharacter(_char);
-	return string{begin, m_scanner.position()};
+	auto detectToken = [](std::string const& _literal = "") -> TokenDesc {
+		if (_literal == "ether") return TokenDesc{SoltToken::Ether, _literal};
+		if (_literal == "uint256") return TokenDesc{SoltToken::UInt, _literal};
+		if (_literal == "FAILURE") return TokenDesc{SoltToken::Failure, _literal};
+		return TokenDesc{SoltToken::Identifier, _literal};
+	};
+
+	auto selectToken = [this](SoltToken _token, std::string const& _literal = "") -> TokenDesc {
+		advance();
+		return make_pair(_token, !_literal.empty() ? _literal : formatToken(_token));
+	};
+
+	TokenDesc token = make_pair(SoltToken::Unknown, "");
+	do {
+		switch(current())
+		{
+		case '/':
+			advance();
+			if (current() == '/')
+				token = selectToken(SoltToken::Newline);
+			break;
+		case '-':
+			if (peek() == '>')
+			{
+				advance();
+				token = selectToken(SoltToken::Arrow);
+			}
+			else
+				token = selectToken(SoltToken::Sub);
+			break;
+		case ':':
+			token = selectToken(SoltToken::Colon);
+			break;
+		case '#':
+			token = selectToken(SoltToken::Comment, scanComment());
+			break;
+		case ',':
+			token = selectToken(SoltToken::Comma);
+			break;
+		case '(':
+			token = selectToken(SoltToken::LParen);
+			break;
+		case ')':
+			token = selectToken(SoltToken::RParen);
+			break;
+		default:
+			if (isIdentifierStart(current()))
+			{
+				TokenDesc detectedToken = detectToken(scanIdentifierOrKeyword());
+				token = selectToken(detectedToken.first, detectedToken.second);
+			}
+			else if (isDecimalDigit(current()))
+				token = selectToken(SoltToken::Number, scanNumber());
+			else if (isWhiteSpace(current()))
+				token = selectToken(SoltToken::Whitespace);
+			else if (isEndOfLine())
+				token = selectToken(SoltToken::EOS);
+			else
+				token = selectToken(SoltToken::Invalid);
+			break;
+		}
+	}
+	while (token.first == SoltToken::Whitespace);
+
+	m_nextToken = token;
+	m_currentToken = token;
 }
 
-void TestFileParser::skipWhitespaces()
+string TestFileParser::Scanner::scanComment()
 {
-	skipWhitespace(m_scanner.position(), m_scanner.endPosition());
+	string comment;
+	advance();
+
+	while (current() != '#')
+	{
+		comment += current();
+		advance();
+	}
+	return comment;
+}
+
+string TestFileParser::Scanner::scanIdentifierOrKeyword()
+{
+	string identifier;
+	identifier += current();
+	while (isIdentifierPart(peek()))
+	{
+		advance();
+		identifier += current();
+	}
+	return identifier;
+}
+
+string TestFileParser::Scanner::scanNumber()
+{
+	string number;
+	number += current();
+	while (isDecimalDigit(peek()))
+	{
+		advance();
+		number += current();
+	}
+	return number;
 }

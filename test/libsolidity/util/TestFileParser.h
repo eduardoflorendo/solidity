@@ -32,21 +32,66 @@ namespace test
 {
 
 /**
- * Format information used for the conversion of human-readable
- * function arguments and return values to `bytes`. Defaults to
- * a 32-byte representation.
+ * All SOLT (or SOLTest) tokens.
  */
-struct ByteFormat
+#define SOLT_TOKEN_LIST(T, K)      \
+	T(Unknown, "unknown", 0)       \
+	T(Invalid, "invalid", 0)       \
+	T(EOS, "EOS", 0)               \
+	T(Whitespace, "_", 0)          \
+	/* punctuations */             \
+	T(LParen, "(", 0)              \
+	T(RParen, ")", 0)              \
+	T(LBrack, "[", 0)              \
+	T(RBrack, "]", 0)              \
+	T(LBrace, "{", 0)              \
+	T(RBrace, "}", 0)              \
+	T(Sub,    "-", 0)              \
+	T(Colon,  ":", 0)              \
+	T(Comma,  ",", 0)              \
+	T(Period, ".", 0)              \
+	T(Arrow, "->", 0)              \
+	T(Newline, "//", 0)            \
+	/* Literals & identifier */    \
+	T(Comment, "comment", 0)       \
+	T(Number, "number", 0)         \
+	T(Identifier, "identifier", 0) \
+	/* type keywords */            \
+	K(Ether, "ether", 0)           \
+	K(UInt, "uint256", 0)          \
+	/* special keywords */         \
+	K(Failure, "FAILURE", 0)       \
+
+
+enum class SoltToken : unsigned int {
+#define T(name, string, precedence) name,
+	SOLT_TOKEN_LIST(T, T)
+	NUM_TOKENS
+#undef T
+};
+
+/**
+ * The purpose of the ABI type is the storage of type information
+ * retrieved while parsing a test. This information is used
+ * for the conversion of human-readable function arguments and
+ * return values to `bytes` and vice-versa.
+ * Defaults to an invalid 0-byte representation.
+ */
+struct ABIType
 {
 	enum Type {
 		UnsignedDec,
-		SignedDec
+		SignedDec,
+		Invalid
 	};
+	ABIType(): type(ABIType::Invalid), size(0) { }
+	ABIType(Type _type, size_t _size): type(_type), size(_size) { }
+
 	Type type;
-	long size = 32;
+	size_t size;
 };
 
-using ByteFormats = std::vector<ByteFormat>;
+using ABITypeList = std::vector<ABIType>;
 
 /**
  * Represents the expected result of a function call after it has been executed. This may be a single
@@ -57,11 +102,19 @@ using ByteFormats = std::vector<ByteFormat>;
  */
 struct FunctionCallExpectations
 {
-	std::string raw;
+	/// ABI encoded `bytes` of parsed expectations. This `bytes`
+	/// is compared to the actual result of a function call
+	/// and is taken into account while validating it.
 	bytes rawBytes;
-	std::vector<ByteFormat> formats;
+	/// Types that were used to encode `rawBytes`. Expectations
+	/// are usually comma seperated literals. Their type is auto-
+	/// detected and retained in order to format them later on.
+	ABITypeList formats;
+	/// Expected status of the transaction. It can be either
+	/// a REVERT or a different EVM failure (e.g. out-of-gas).
 	bool status = true;
-	std::string output;
+	/// A Comment that can be attached to the expectations,
+	/// that is retained and can be displayed.
 	std::string comment;
 };
 
@@ -73,9 +126,15 @@ struct FunctionCallExpectations
  */
 struct FunctionCallArgs
 {
-	std::string raw;
+	/// ABI encoded `bytes` of parsed parameters. This `bytes`
+	/// passed to the function call.
 	bytes rawBytes;
-	std::vector<ByteFormat> formats;
+	/// Types that were used to encode `rawBytes`. Parameters
+	/// are usually comma seperated literals. Their type is auto-
+	/// detected and retained in order to format them later on.
+	ABITypeList formats;
+	/// A Comment that can be attached to the expectations,
+	/// that is retained and can be displayed.
 	std::string comment;
 };
 
@@ -85,10 +144,18 @@ struct FunctionCallArgs
  */
 struct FunctionCall
 {
+	/// Signature of the function call, e.g. `f(uint256, uint256)`.
 	std::string signature;
-	FunctionCallArgs arguments;
-	FunctionCallExpectations expectations;
+	/// Optional `ether` value that can be send with the call.
 	u256 value;
+	/// Object that holds all function parameters in their `bytes`
+	/// representations given by the contract ABI.
+	FunctionCallArgs arguments;
+	/// Object that holds all function call expectation in
+	/// their `bytes` representations given by the contract ABI.
+	/// They are checked against the actual results and their
+	/// `bytes` representation, as well as the transaction status.
+	FunctionCallExpectations expectations;
 };
 
 /**
@@ -97,29 +164,17 @@ struct FunctionCall
  * calls and their expected result after the call was made.
  *
  * - Function calls defined in blocks:
- * // f(uint256, uint256): 1, 1 # Signature and comma-separated list of arguments
- * // -> 1, 1                   # Expected result value
- * // g(), 2 ether              # (Optional) Ether to be send with the call
+ * // f(uint256, uint256): 1, 1 # Signature and comma-separated list of arguments #
+ * // -> 1, 1                   # Expected result value #
+ * // g(), 2 ether              # (Optional) Ether to be send with the call #
  * // -> 2, 3
  * // h(uint256), 1 ether: 42
- * // REVERT
+ * // -> FAILURE                # If REVERT or other EVM failure was detected #
  * ...
  */
 class TestFileParser
 {
 public:
-
-	/// Tries to convert the formatted \param _string to it's byte representation and
-	/// preserves the chosen byte formats. Supported types:
-	/// - unsigned and signed decimal number literals
-	/// Throws an InvalidArgumentEncoding exception if data is encoded incorrectly or
-	/// if data type is not supported.
-	static std::pair<bytes, ByteFormats> formattedStringToBytes(std::string _string);
-
-	/// Formats \param _bytes given the byte formats \param _formats. Supported formats:
-	/// - unsigned and signed decimal number literals
-	static std::string bytesToFormattedString(bytes const& _bytes, ByteFormats const& _formats);
-
 	/// Constructor that takes an input stream \param _stream to operate on
 	/// and creates the internal scanner.
 	TestFileParser(std::istream& _stream): m_scanner(_stream) {}
@@ -130,43 +185,65 @@ public:
 	/// of its arguments or expected results.
 	std::vector<FunctionCall> parseFunctionCalls();
 
+	/// Prints a friendly string representation of \param _token.
+	static std::string formatToken(SoltToken _token);
+
 private:
 	/**
-	 * Simple scanner that is used internally to abstract away character traversal.
+	 * Token scanner that is used internally to abstract away character traversal.
 	 */
 	class Scanner
 	{
 	public:
 		/// Constructor that takes an input stream \param _stream to operate on.
-		Scanner(std::istream& _stream): m_stream(_stream) {}
+		Scanner(std::istream& _stream) { readStream(_stream); }
 
-		/// Returns the current character.
-		char current() const { return *m_char; }
-		/// Returns true if the end of a line is reached, false otherwise.
-		bool eol() const { return m_char == m_line.end(); }
-		/// Returns an iterator of the current position in the input stream.
-		std::string::iterator& position() { return m_char; }
-		/// Returns an iterator to the end position of the input stream.
-		std::string::iterator endPosition() { return m_line.end(); }
-		/// Advances current position in the input stream.
-		void advance() { ++m_char; }
-		/// Advances stream by one line. Returns true if stream contains a new line,
-		/// false if no new line could be read.
-		bool advanceLine()
-		{
-			std::istream& line = std::getline(m_stream, m_line);
-			m_char = m_line.begin();
-			return line ? true : false;
-		}
+		/// Reads input stream into a single line and resets the current iterator.
+		void readStream(std::istream& _stream);
+
+		/// Reads character stream and creates token.
+		void scanNextToken();
+
+		SoltToken currentToken() { return m_currentToken.first; }
+		SoltToken peekToken() { return m_nextToken.first; }
+
+		std::string currentLiteral() { return m_currentToken.second; }
+
+		std::string scanComment();
+		std::string scanIdentifierOrKeyword();
+		std::string scanNumber();
 
 	private:
+		using TokenDesc = std::pair<SoltToken, std::string>;
+
+		/// Advances current position in the input stream.
+		void advance() { ++m_char; }
+		/// Returns the current character.
+		char current() const { return *m_char; }
+		/// Peeks the next character.
+		char peek() const { auto it = m_char; return *(it + 1); }
+		/// Returns true if the end of a line is reached, false otherwise.
+		bool isEndOfLine() const { return m_char == m_line.end(); }
+
 		std::string m_line;
 		std::string::iterator m_char;
-		std::istream& m_stream;
+
+		std::string m_currentLiteral;
+
+		TokenDesc m_currentToken;
+		TokenDesc m_nextToken;
 	};
 
+	bool accept(SoltToken _token, bool const _expect = false);
+	bool expect(SoltToken _token, bool const _advance = true);
+
 	/// Parses a function call signature in the form of f(uint256, ...).
-	std::string parseFunctionCallSignature();
+	std::string parseFunctionSignature();
+
+	/// Parses the optional ether value that can be passed alongside the
+	/// function call arguments. Throws an InvalidEtherValueEncoding exception
+	/// if given value cannot be converted to `u256`.
+	u256 parseFunctionCallValue();
 
 	/// Parses a comma-separated list of arguments passed with a function call.
 	/// Does not check for a potential mismatch between the signature and the number
@@ -176,17 +253,22 @@ private:
 	/// Parses the expected result of a function call execution.
 	FunctionCallExpectations parseFunctionCallExpectations();
 
-	/// Parses the optional ether value that can be passed alongside the
-	/// function call arguments. Throws an InvalidEtherValueEncoding exception
-	/// if given value cannot be converted to `u256`.
-	boost::optional<u256> parseFunctionCallValue();
+	/// Parses and converts the current literal to its byte representation and
+	/// preserves the chosen ABI type. Based on that type information, the driver of
+	/// this parser can format arguments, expectations and results. Supported types:
+	/// - unsigned and signed decimal number literals
+	/// Throws a ParserError if data is encoded incorrectly or
+	/// if data type is not supported.
+	std::pair<bytes, ABIType> parseABITypeLiteral();
 
-	bool advanceLine();
-	void expectCharacter(char const _char);
-	void expectCharacterSequence(std::string const& _charSequence);
-	std::string parseUntilCharacter(char const _char, bool const _expect = false);
-	void skipWhitespaces();
+	/// Parses the current number literal.
+	std::string parseNumber();
 
+	/// Tries to convert \param _literal to `uint256` and throws if
+	/// if conversion failed.
+	u256 convertNumber(std::string const& _literal);
+
+	/// A scanner instance
 	Scanner m_scanner;
 };
 
