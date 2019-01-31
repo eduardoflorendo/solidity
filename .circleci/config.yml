@@ -310,6 +310,9 @@ jobs:
       - run:
           name: Run tests with ASAN
           command: |
+            ulimit -a
+            # Increase stack size because ASan makes stack frames bigger and that breaks our assumptions (in tests).
+            ulimit -s 16384
             build/test/soltest --logger=JUNIT,test_suite,test_results/result.xml -- --no-ipc --testpath test
       - store_test_results:
           path: test_results/
