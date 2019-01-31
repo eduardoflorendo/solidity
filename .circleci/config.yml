@@ -172,7 +172,7 @@ jobs:
       TERM: xterm
       CC: /usr/bin/clang-7
       CXX: /usr/bin/clang++-7
-      CMAKE_OPTIONS: -DLLL=ON -DSANITIZE=address -DCMAKE_BUILD_TYPE=Debug
+      CMAKE_OPTIONS: -DSANITIZE=address -DCMAKE_BUILD_TYPE=Debug
     steps:
       - checkout
       - run:
