@@ -53,7 +53,7 @@ namespace test
 	T(Arrow, "->", 0)              \
 	T(Newline, "//", 0)            \
 	/* Literals & identifier */    \
-	T(Comment, "comment", 0)       \
+	T(Comment, "#", 0)             \
 	T(Number, "number", 0)         \
 	T(Identifier, "identifier", 0) \
 	/* type keywords */            \
@@ -61,7 +61,6 @@ namespace test
 	K(UInt, "uint256", 0)          \
 	/* special keywords */         \
 	K(Failure, "FAILURE", 0)       \
-
 
 enum class SoltToken : unsigned int {
 #define T(name, string, precedence) name,
@@ -91,7 +90,13 @@ struct ABIType
 	size_t size;
 };
 
-using ABITypeList = std::vector<ABIType>;
+struct FormatInfo
+{
+	ABIType abiType;
+	bool newline;
+};
+
+using FormatList = std::vector<FormatInfo>;
 
 /**
  * Represents the expected result of a function call after it has been executed. This may be a single
@@ -109,13 +114,22 @@ struct FunctionCallExpectations
 	/// Types that were used to encode `rawBytes`. Expectations
 	/// are usually comma seperated literals. Their type is auto-
 	/// detected and retained in order to format them later on.
-	ABITypeList formats;
+	FormatList formats;
 	/// Expected status of the transaction. It can be either
 	/// a REVERT or a different EVM failure (e.g. out-of-gas).
 	bool status = true;
 	/// A Comment that can be attached to the expectations,
 	/// that is retained and can be displayed.
 	std::string comment;
+	/// Takes a newly parsed expected and type-annotated `bytes`,
+	/// appends it to the internal `bytes` buffer. It can also
+	/// store newlines found in the source, that are needed to
+	/// format input and output of the interactive update.
+	void appendExpected(std::pair<bytes, ABIType> _types, bool const _isNewline = false)
+	{
+		rawBytes += _types.first;
+		formats.emplace_back(FormatInfo{std::move(_types.second), _isNewline});
+	}
 };
 
 /**
@@ -132,10 +146,20 @@ struct FunctionCallArgs
 	/// Types that were used to encode `rawBytes`. Parameters
 	/// are usually comma seperated literals. Their type is auto-
 	/// detected and retained in order to format them later on.
-	ABITypeList formats;
+	FormatList formats;
 	/// A Comment that can be attached to the expectations,
 	/// that is retained and can be displayed.
 	std::string comment;
+
+	/// Takes a newly parsed, and type-annotated `bytes` argument,
+	/// appends it to the internal `bytes` buffer. It can also
+	/// store newlines found in the source, that are needed to
+	/// format input and output of the interactive update.
+	void appendParameter(std::pair<bytes, ABIType> _types, bool const _isNewline = false)
+	{
+		rawBytes += _types.first;
+		formats.emplace_back(FormatInfo{std::move(_types.second), _isNewline});
+	}
 };
 
 /**
@@ -156,6 +180,12 @@ struct FunctionCall
 	/// They are checked against the actual results and their
 	/// `bytes` representation, as well as the transaction status.
 	FunctionCallExpectations expectations;
+
+	enum DisplayMode {
+		SingleLine,
+		MultiLine
+	};
+	DisplayMode displayMode = DisplayMode::SingleLine;
 };
 
 /**
@@ -196,6 +226,7 @@ private:
 	{
 	public:
 		/// Constructor that takes an input stream \param _stream to operate on.
+		/// It reads all lines into one single line, keeping the newlines.
 		Scanner(std::istream& _stream) { readStream(_stream); }
 
 		/// Reads input stream into a single line and resets the current iterator.
@@ -256,8 +287,9 @@ private:
 	/// Parses and converts the current literal to its byte representation and
 	/// preserves the chosen ABI type. Based on that type information, the driver of
 	/// this parser can format arguments, expectations and results. Supported types:
-	/// - unsigned and signed decimal number literals
-	/// Throws a ParserError if data is encoded incorrectly or
+	/// - unsigned and signed decimal number literals.
+	/// Returns invalid ABI type for empty literal. This is needed in order
+	/// to detect empty expectations. Throws a ParserError if data is encoded incorrectly or
 	/// if data type is not supported.
 	std::pair<bytes, ABIType> parseABITypeLiteral();
 
@@ -265,7 +297,7 @@ private:
 	std::string parseNumber();
 
 	/// Tries to convert \param _literal to `uint256` and throws if
-	/// if conversion failed.
+	/// conversion fails.
 	u256 convertNumber(std::string const& _literal);
 
 	/// A scanner instance

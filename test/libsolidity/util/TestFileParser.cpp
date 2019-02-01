@@ -74,24 +74,40 @@ vector<dev::solidity::test::FunctionCall> TestFileParser::parseFunctionCalls()
 					call.value = parseFunctionCallValue();
 
 				// f(), 314 ether: 1, 1
+				if (accept(SoltToken::Newline, true))
+					call.displayMode = FunctionCall::DisplayMode::MultiLine;
+
 				if (accept(SoltToken::Colon, true))
 					call.arguments = parseFunctionCallArguments();
+
+				if (accept(SoltToken::Newline, true))
+					call.displayMode = FunctionCall::DisplayMode::MultiLine;
 
 				string comment = m_scanner.currentLiteral();
 				if (accept(SoltToken::Comment, true))
 					call.arguments.comment = comment;
 
-				// -> 1
-				expect(SoltToken::Newline);
-				expect(SoltToken::Arrow);
-				if (m_scanner.peekToken() != SoltToken::Newline)
-				{
-					call.expectations = parseFunctionCallExpectations();
+				// f() -> 1
+				// f(uint256): 3
+				// -> 2
+				if (accept(SoltToken::Newline, true))
+					call.displayMode = FunctionCall::DisplayMode::MultiLine;
 
-					string comment = m_scanner.currentLiteral();
-					if (accept(SoltToken::Comment, true))
-						call.expectations.comment = comment;
-				}
+				expect(SoltToken::Arrow);
+
+				if (accept(SoltToken::Newline, true))
+					call.displayMode = FunctionCall::DisplayMode::MultiLine;
+
+				call.expectations = parseFunctionCallExpectations();
+
+				if (m_scanner.currentToken() == SoltToken::Newline)
+					if (accept(SoltToken::Newline, true))
+						call.displayMode = FunctionCall::DisplayMode::MultiLine;
+
+				comment = m_scanner.currentLiteral();
+				if (accept(SoltToken::Comment, true))
+					call.expectations.comment = comment;
+
 				calls.emplace_back(std::move(call));
 			}
 			else
@@ -164,10 +180,7 @@ string TestFileParser::parseFunctionSignature()
 
 u256 TestFileParser::parseFunctionCallValue()
 {
-	u256 value;
-	string literal = m_scanner.currentLiteral();
-	expect(SoltToken::Number);
-	value = convertNumber(literal);
+	u256 value = convertNumber(parseNumber());
 	expect(SoltToken::Ether);
 	return value;
 }
@@ -175,15 +188,16 @@ u256 TestFileParser::parseFunctionCallValue()
 FunctionCallArgs TestFileParser::parseFunctionCallArguments()
 {
 	FunctionCallArgs arguments;
+	std::pair<bytes, ABIType> newline{};
 
-	auto formattedBytes = parseABITypeLiteral();
-	arguments.rawBytes += formattedBytes.first;
-	arguments.formats.emplace_back(std::move(formattedBytes.second));
+	if (accept(SoltToken::Newline, true))
+		arguments.appendParameter(newline, true);
+	arguments.appendParameter(parseABITypeLiteral());
 	while (accept(SoltToken::Comma, true))
 	{
-		auto formattedBytes = parseABITypeLiteral();
-		arguments.rawBytes += formattedBytes.first;
-		arguments.formats.emplace_back(std::move(formattedBytes.second));
+		if (accept(SoltToken::Newline, true))
+			arguments.appendParameter(newline, true);
+		arguments.appendParameter(parseABITypeLiteral());
 	}
 	return arguments;
 }
@@ -191,21 +205,20 @@ FunctionCallArgs TestFileParser::parseFunctionCallArguments()
 FunctionCallExpectations TestFileParser::parseFunctionCallExpectations()
 {
 	FunctionCallExpectations expectations;
-	string token = m_scanner.currentLiteral();
+	std::pair<bytes, ABIType> newline{};
 
 	if (accept(SoltToken::Failure, true))
 		expectations.status = false;
 	else
 	{
-		auto formattedBytes = parseABITypeLiteral();
-		expectations.rawBytes += formattedBytes.first;
-		expectations.formats.emplace_back(std::move(formattedBytes.second));
-
+		if (accept(SoltToken::Newline, true))
+			expectations.appendExpected(newline, true);
+		expectations.appendExpected(parseABITypeLiteral());
 		while (accept(SoltToken::Comma, true))
 		{
-			auto formattedBytes = parseABITypeLiteral();
-			expectations.rawBytes += formattedBytes.first;
-			expectations.formats.emplace_back(std::move(formattedBytes.second));
+			if (accept(SoltToken::Newline, true))
+				expectations.appendExpected(newline, true);
+			expectations.appendExpected(parseABITypeLiteral());
 		}
 	}
 	return expectations;
@@ -219,21 +232,16 @@ pair<bytes, ABIType> TestFileParser::parseABITypeLiteral()
 		ABIType abiType;
 		if (accept(SoltToken::Sub))
 		{
-			abiType.type = ABIType::Type::SignedDec;
-			abiType.size = 32;
-
+			abiType = ABIType{ABIType::SignedDec, 32};
 			expect(SoltToken::Sub);
 			number = convertNumber(parseNumber()) * -1;
 		}
 		else
 			if (accept(SoltToken::Number))
 			{
-				abiType.type = ABIType::Type::UnsignedDec;
-				abiType.size = 32;
-
+				abiType = ABIType{ABIType::UnsignedDec, 32};
 				number = convertNumber(parseNumber());
 			}
-
 		return make_pair(toBigEndian(number), abiType);
 	}
 	catch (std::exception const&)
