@@ -69,8 +69,7 @@ private:
 		/// and also the expected transaction status of the function call to the actual test results.
 		bool matchesExpectation() const
 		{
-			auto expectedByteFormat = TestFileParser::formattedStringToBytes(call.expectations.raw);
-			return status == call.expectations.status && rawBytes == expectedByteFormat.first;
+			return status == call.expectations.status && rawBytes == call.expectations.rawBytes;
 		}
 		/// Resets current results in case the function was called and the result
 		/// stored already (e.g. if test case was updated via isoltest).
