@@ -32,11 +32,14 @@ namespace test
 {
 
 /**
- * All SOLT (or sol_t) tokens.
+ * All SOLT (or SOLTest) tokens.
  */
 #define SOLT_TOKEN_LIST(T, K)      \
 	T(Unknown, "unknown", 0)       \
+	T(Invalid, "invalid", 0)       \
 	T(EOS, "EOS", 0)               \
+	T(Whitespace, "_", 0)          \
+	/* punctuations */             \
 	T(LParen, "(", 0)              \
 	T(RParen, ")", 0)              \
 	T(LBrack, "[", 0)              \
@@ -52,8 +55,8 @@ namespace test
 	/* Literals & identifier */    \
 	T(Comment, "#", 0)             \
 	T(Number, "number", 0)         \
-	K(Failure, "FAILURE", 0)       \
-	/* type keywords*/             \
+	T(Identifier, "identifier", 0) \
+	/* type keywords */            \
 	K(Ether, "ether", 0)           \
 	K(UInt, "uint256", 0)          \
 	/* special keywords */         \
@@ -67,9 +70,11 @@ enum class SoltToken : unsigned int {
 };
 
 /**
- * Format information used for the conversion of human-readable
- * function arguments and return values to `bytes`. Defaults to
- * a 32-byte representation.
+ * The purpose of the ABI type is the storage of type information
+ * retrieved while parsing a test. This information is used
+ * for the conversion of human-readable function arguments and
+ * return values to `bytes` and vice-versa.
+ * Defaults to an invalid 0-byte representation.
  */
 struct ABIType
 {

@@ -37,14 +37,14 @@ using namespace boost::unit_test;
 
 namespace
 {
-	string formatBytes(bytes const& _bytes, vector<ABIType> _types, bool const _formatInvalid = false)
+	string formatBytes(bytes const& _bytes, vector<FormatInfo> _formats, bool const _formatInvalid = false)
 	{
 		stringstream resultStream;
 		auto it = _bytes.begin();
-		for (auto const& abiType: _types)
+		for (auto const& format: _formats)
 		{
-			bytes byteRange{it, it + abiType.size};
-			switch (abiType.type)
+			bytes byteRange{it, it + format.abiType.size};
+			switch (format.abiType.type)
 			{
 			case ABIType::SignedDec:
 				if (*byteRange.begin() & 0x80)
@@ -70,8 +70,8 @@ namespace
 					resultStream << fromBigEndian<u256>(byteRange);
 				break;
 			}
-			it += abiType.size;
-			if (it != _bytes.end())
+			it += format.abiType.size;
+			if (it != _bytes.end() && !(format.abiType.type == ABIType::Invalid))
 				resultStream << ", ";
 		}
 		return resultStream.str();
@@ -167,13 +167,23 @@ bool SemanticTest::deploy(string const& _contractName, u256 const& _value, bytes
 
 void SemanticTest::printFunctionCallHighlighted(ostream& _stream, FunctionCall const& _call, string const& _linePrefix) const
 {
-	_stream << _linePrefix << _call.signature;
+	const bool isMultiLine = _call.displayMode == FunctionCall::DisplayMode::MultiLine;
+	_stream << _linePrefix << _call.signature
+			<< (isMultiLine ? "\n" + _linePrefix : "");
+
 	if (_call.value > u256(0))
-		_stream << ", " << _call.value << " " <<TestFileParser::formatToken(SoltToken::Ether);
+		_stream << TestFileParser::formatToken(SoltToken::Comma)
+				<< _call.value << " "
+				<< TestFileParser::formatToken(SoltToken::Ether);
 	if (!_call.arguments.rawBytes.empty())
-		_stream << ": " << formatBytes(_call.arguments.rawBytes, _call.arguments.formats);
+		_stream << ": "
+				<< formatBytes(_call.arguments.rawBytes, _call.arguments.formats)
+				<< (isMultiLine ? "\n" + _linePrefix : "");
 	if (!_call.arguments.comment.empty())
-		_stream << " # " << _call.arguments.comment;
+		_stream << " "
+				<< TestFileParser::formatToken(SoltToken::Comment)
+				<< _call.arguments.comment
+				<< TestFileParser::formatToken(SoltToken::Comment);
 	_stream << endl;
 }
 
@@ -185,12 +195,12 @@ void SemanticTest::printFunctionCallTestHighlighted(
 	bool const _formatted
 ) const
 {
-	auto formatOutput = [](bytes _bytes, vector<ABIType> _types, const bool _isExpectation) -> string
+	auto formatOutput = [](bytes _bytes, vector<FormatInfo> _formats, const bool _isExpectation) -> string
 	{
 		if (_bytes.empty())
 			return TestFileParser::formatToken(SoltToken::Failure);
 		else
-			return formatBytes(_bytes, _types, !_isExpectation);
+			return formatBytes(_bytes, _formats, !_isExpectation);
 	};
 	bytes outputBytes = _printExcepted
 			? _test.call.expectations.rawBytes
@@ -204,6 +214,9 @@ void SemanticTest::printFunctionCallTestHighlighted(
 	if (_formatted && !_test.matchesExpectation())
 		_stream << formatting::RESET;
 	if (!_test.call.expectations.comment.empty())
-		_stream << " # " << _test.call.expectations.comment;
+		_stream << " "
+				<< TestFileParser::formatToken(SoltToken::Comment)
+				<< _test.call.expectations.comment
+				<< TestFileParser::formatToken(SoltToken::Comment);
 	_stream << endl;
 }

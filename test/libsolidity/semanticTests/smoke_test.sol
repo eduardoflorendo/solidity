@@ -10,11 +10,7 @@ contract C {
     }
 }
 // ----
-// iam_not_there()
+// h()
+// -> 1 # This should work. #
+// f(uint256): 1, 2
 // -> FAILURE
-// f()
-// -> 1
-// g(uint256,uint256): 4, 8
-// -> 4
-// h(), 314 ether
-// -> 1

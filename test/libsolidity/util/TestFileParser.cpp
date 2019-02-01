@@ -52,6 +52,71 @@ namespace
 	}
 }
 
+vector<dev::solidity::test::FunctionCall> TestFileParser::parseFunctionCalls()
+{
+	vector<FunctionCall> calls;
+	if (!accept(SoltToken::EOS))
+	{
+		// TODO: check initial token state
+		expect(SoltToken::Unknown);
+		while (!accept(SoltToken::EOS))
+		{
+			if (!accept(SoltToken::Whitespace))
+			{
+				FunctionCall call;
+
+				// f()
+				expect(SoltToken::Newline);
+				call.signature = parseFunctionSignature();
+
+				// f(), 314 ether
+				if (accept(SoltToken::Comma, true))
+					call.value = parseFunctionCallValue();
+
+				// f(), 314 ether: 1, 1
+				if (accept(SoltToken::Newline, true))
+					call.displayMode = FunctionCall::DisplayMode::MultiLine;
+
+				if (accept(SoltToken::Colon, true))
+					call.arguments = parseFunctionCallArguments();
+
+				if (accept(SoltToken::Newline, true))
+					call.displayMode = FunctionCall::DisplayMode::MultiLine;
+
+				string comment = m_scanner.currentLiteral();
+				if (accept(SoltToken::Comment, true))
+					call.arguments.comment = comment;
+
+				// f() -> 1
+				// f(uint256): 3
+				// -> 2
+				if (accept(SoltToken::Newline, true))
+					call.displayMode = FunctionCall::DisplayMode::MultiLine;
+
+				expect(SoltToken::Arrow);
+
+				if (accept(SoltToken::Newline, true))
+					call.displayMode = FunctionCall::DisplayMode::MultiLine;
+
+				call.expectations = parseFunctionCallExpectations();
+
+				if (m_scanner.currentToken() == SoltToken::Newline)
+					if (accept(SoltToken::Newline, true))
+						call.displayMode = FunctionCall::DisplayMode::MultiLine;
+
+				comment = m_scanner.currentLiteral();
+				if (accept(SoltToken::Comment, true))
+					call.expectations.comment = comment;
+
+				calls.emplace_back(std::move(call));
+			}
+			else
+				m_scanner.scanNextToken();
+		}
+	}
+	return calls;
+}
+
 string TestFileParser::formatToken(SoltToken _token)
 {
 	switch (_token)
@@ -88,66 +153,6 @@ bool TestFileParser::expect(SoltToken _token, bool const _advance)
 	return true;
 }
 
-vector<dev::solidity::test::FunctionCall> TestFileParser::parseFunctionCalls()
-{
-	vector<FunctionCall> calls;
-	if (!accept(SoltToken::EOS))
-	{
-		// TODO: check initial token state
-		expect(SoltToken::Unknown);
-		while (!accept(SoltToken::EOS))
-		{
-			if (!accept(SoltToken::Whitespace))
-			{
-				FunctionCall call;
-
-				// f()
-				expect(SoltToken::Newline);
-				call.signature = parseFunctionSignature();
-
-				// f(), 314 ether
-				if (accept(SoltToken::Comma, true))
-					call.value = parseFunctionCallValue();
-
-				// f(), 314 ether: 1, 1
-				if (accept(SoltToken::Newline, true))
-					call.displayMode = FunctionCall::DisplayMode::MultiLine;
-
-				if (accept(SoltToken::Colon, true))
-					call.arguments = parseFunctionCallArguments();
-
-				string comment = m_scanner.currentLiteral();
-				if (accept(SoltToken::Comment, true))
-					call.arguments.comment = comment;
-
-				// -> 1
-				expect(SoltToken::Newline);
-				expect(SoltToken::Arrow);
-
-				if (accept(SoltToken::Newline, true))
-					call.displayMode = FunctionCall::DisplayMode::MultiLine;
-
-				call.expectations = parseFunctionCallExpectations();
-
-				if (m_scanner.currentToken() == SoltToken::Newline)
-					if (accept(SoltToken::Newline, true))
-						call.displayMode = FunctionCall::DisplayMode::MultiLine;
-
-				comment = m_scanner.currentLiteral();
-				if (accept(SoltToken::Comment, true))
-					call.expectations.comment = comment;
-
-				calls.emplace_back(std::move(call));
-			}
-			else
-				m_scanner.scanNextToken();
-		}
-	}
-	signature += formatToken(SoltToken::RParen);
-	expect(SoltToken::RParen);
-	return signature;
-}
-
 string TestFileParser::parseFunctionSignature()
 {
 	string signature = m_scanner.currentLiteral();
@@ -175,10 +180,7 @@ string TestFileParser::parseFunctionSignature()
 
 u256 TestFileParser::parseFunctionCallValue()
 {
-	u256 value;
-	string literal = m_scanner.currentLiteral();
-	expect(SoltToken::Number);
-	value = convertNumber(literal);
+	u256 value = convertNumber(parseNumber());
 	expect(SoltToken::Ether);
 	return value;
 }
@@ -186,37 +188,53 @@ u256 TestFileParser::parseFunctionCallValue()
 FunctionCallArgs TestFileParser::parseFunctionCallArguments()
 {
 	FunctionCallArgs arguments;
+	std::pair<bytes, ABIType> newline{};
 
-	auto formattedBytes = parseNumberLiteral();
-	arguments.rawBytes += formattedBytes.first;
-	arguments.formats.emplace_back(std::move(formattedBytes.second));
+	if (accept(SoltToken::Newline, true))
+		arguments.appendParameter(newline, true);
+	arguments.appendParameter(parseABITypeLiteral());
 	while (accept(SoltToken::Comma, true))
 	{
-		auto formattedBytes = parseNumberLiteral();
-		arguments.rawBytes += formattedBytes.first;
-		arguments.formats.emplace_back(std::move(formattedBytes.second));
+		if (accept(SoltToken::Newline, true))
+			arguments.appendParameter(newline, true);
+		arguments.appendParameter(parseABITypeLiteral());
+	}
+	return arguments;
+}
+
+FunctionCallExpectations TestFileParser::parseFunctionCallExpectations()
+{
+	FunctionCallExpectations expectations;
+	std::pair<bytes, ABIType> newline{};
+
+	if (accept(SoltToken::Failure, true))
+		expectations.status = false;
+	else
+	{
+		if (accept(SoltToken::Newline, true))
+			expectations.appendExpected(newline, true);
+		expectations.appendExpected(parseABITypeLiteral());
+		while (accept(SoltToken::Comma, true))
+		{
+			if (accept(SoltToken::Newline, true))
+				expectations.appendExpected(newline, true);
+			expectations.appendExpected(parseABITypeLiteral());
+		}
 	}
 	return expectations;
 }
 
 pair<bytes, ABIType> TestFileParser::parseABITypeLiteral()
 {
-	FunctionCallExpectations expectations;
-	string token = m_scanner.currentLiteral();
-
-	if (accept(SoltToken::Failure, true))
-		expectations.status = false;
-	else
+	try
 	{
-		auto formattedBytes = parseNumberLiteral();
-		expectations.rawBytes += formattedBytes.first;
-		expectations.formats.emplace_back(std::move(formattedBytes.second));
-
-		while (accept(SoltToken::Comma, true))
+		u256 number;
+		ABIType abiType;
+		if (accept(SoltToken::Sub))
 		{
-			auto formattedBytes = parseNumberLiteral();
-			expectations.rawBytes += formattedBytes.first;
-			expectations.formats.emplace_back(std::move(formattedBytes.second));
+			abiType = ABIType{ABIType::SignedDec, 32};
+			expect(SoltToken::Sub);
+			number = convertNumber(parseNumber()) * -1;
 		}
 		else
 			if (accept(SoltToken::Number))
@@ -226,45 +244,23 @@ pair<bytes, ABIType> TestFileParser::parseABITypeLiteral()
 			}
 		return make_pair(toBigEndian(number), abiType);
 	}
-	return expectations;
-}
-
-u256 TestFileParser::convertNumber(string const& _literal)
-{
-	try {
-		return u256{_literal};
-	}
 	catch (std::exception const&)
 	{
 		throw Error(Error::Type::ParserError, "Number encoding invalid.");
 	}
 }
 
-pair<bytes, ABIType> TestFileParser::parseNumberLiteral()
+string TestFileParser::parseNumber()
 {
-	u256 number;
-	ABIType abiType;
-	try
-	{
-		if (accept(SoltToken::Sub))
-		{
-			abiType.type = ABIType::Type::SignedDec;
-			expect(SoltToken::Sub);
+	string literal = m_scanner.currentLiteral();
+	expect(SoltToken::Number);
+	return literal;
+}
 
-			string literal = m_scanner.currentLiteral();
-			expect(SoltToken::Number);
-			number = convertNumber(literal) * -1;
-		}
-		else
-			if (accept(SoltToken::Number))
-			{
-				abiType.type = ABIType::Type::UnsignedDec;
-
-				string literal = m_scanner.currentLiteral();
-				expect(SoltToken::Number);
-				number = convertNumber(literal);
-			}
-		return make_pair(toBigEndian(number), abiType);
+u256 TestFileParser::convertNumber(string const& _literal)
+{
+	try {
+		return u256{_literal};
 	}
 	catch (std::exception const&)
 	{
