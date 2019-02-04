@@ -156,22 +156,28 @@ Mathematical and Cryptographic Functions
 
 ``addmod(uint x, uint y, uint k) returns (uint)``:
     compute ``(x + y) % k`` where the addition is performed with arbitrary precision and does not wrap around at ``2**256``. Assert that ``k != 0`` starting from version 0.5.0.
+
 ``mulmod(uint x, uint y, uint k) returns (uint)``:
     compute ``(x * y) % k`` where the multiplication is performed with arbitrary precision and does not wrap around at ``2**256``. Assert that ``k != 0`` starting from version 0.5.0.
+
 ``keccak256(bytes memory) returns (bytes32)``:
     compute the Keccak-256 hash of the input
+
 ``sha256(bytes memory) returns (bytes32)``:
     compute the SHA-256 hash of the input
+
 ``ripemd160(bytes memory) returns (bytes20)``:
     compute RIPEMD-160 hash of the input
+
 ``ecrecover(bytes32 hash, uint8 v, bytes32 r, bytes32 s) returns (address)``:
-    recover the address associated with the public key from elliptic curve signature or return zero on error. Returns an ``address``, and not an ``address
-   payable``. See :ref:`address payable<address>` for conversion, in case you need to transfer funds to the recovered address.
-    (`example usage <https://ethereum.stackexchange.com/q/1777/222>`_)
+    recover the address associated with the public key from elliptic curve signature or return zero on error.
+    The function parameters correspond to ECDSA values of the signature after the hex prefix:
 
-.. warning::
+    ``r`` = signature[0:64]
+    ``s`` = signature[64:128]
+    ``v`` = signature[128:130]
 
-    The ecrecover builtin still has the "high s" issue, i.e. you can take an existing signature and modify both v and s (IIRC) in a certain way, to get a different but equally valid signature.
+    Returns an ``address``, and not an ``address payable``. See :ref:`address payable<address>` for conversion, in case you need to transfer funds to the recovered address.
 
 .. note::
 
