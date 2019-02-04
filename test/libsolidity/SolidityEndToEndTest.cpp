@@ -13716,25 +13716,23 @@ BOOST_AUTO_TEST_CASE(abi_encodePackedV2_structs)
 				s.d[0] = -7;
 				s.d[1] = -8;
 			}
-			function testStorage() public returns (bytes memory) {
+			function testStorage() public {
 				emit E(s);
-				return abi.encodePacked(uint8(0x33), s, uint8(0x44));
 			}
-			function testMemory() public returns (bytes memory) {
+			function testMemory() public {
 				S memory m = s;
 				emit E(m);
-				return abi.encodePacked(uint8(0x33), m, uint8(0x44));
 			}
 		}
 	)";
 	compileAndRun(sourceCode, 0, "C");
 	bytes structEnc = encodeArgs(int(0x12), u256(-7), int(2), int(3), u256(-7), u256(-8));
 	string encoding = "\x33" + asString(structEnc) + "\x44";
-	ABI_CHECK(callContractFunction("testStorage()"), encodeArgs(0x20, encoding.size(), encoding));
+	ABI_CHECK(callContractFunction("testStorage()"), encodeArgs());
 	BOOST_REQUIRE_EQUAL(m_logs[0].topics.size(), 2);
 	BOOST_CHECK_EQUAL(m_logs[0].topics[0], dev::keccak256(string("E((uint8,int16,uint8[2],int16[]))")));
 	BOOST_CHECK_EQUAL(m_logs[0].topics[1], dev::keccak256(asString(structEnc)));
-	ABI_CHECK(callContractFunction("testMemory()"), encodeArgs(0x20, encoding.size(), encoding));
+	ABI_CHECK(callContractFunction("testMemory()"), encodeArgs());
 	BOOST_REQUIRE_EQUAL(m_logs[0].topics.size(), 2);
 	BOOST_CHECK_EQUAL(m_logs[0].topics[0], dev::keccak256(string("E((uint8,int16,uint8[2],int16[]))")));
 	BOOST_CHECK_EQUAL(m_logs[0].topics[1], dev::keccak256(asString(structEnc)));
@@ -13750,7 +13748,7 @@ BOOST_AUTO_TEST_CASE(abi_encodePackedV2_nestedArray)
 				int16 b;
 			}
 			event E(S[2][][3] indexed);
-			function testNestedArrays() public returns (bytes memory) {
+			function testNestedArrays() public {
 				S[2][][3] memory x;
 				x[1] = new S[2][](2);
 				x[1][0][0].a = 1;
@@ -13758,14 +13756,13 @@ BOOST_AUTO_TEST_CASE(abi_encodePackedV2_nestedArray)
 				x[1][0][1].a = 3;
 				x[1][1][1].b = 4;
 				emit E(x);
-				return abi.encodePacked(uint8(0x33), x, uint8(0x44));
 			}
 		}
 	)";
 	compileAndRun(sourceCode, 0, "C");
 	bytes structEnc = encodeArgs(1, 2, 3, 0, 0, 0, 0, 4);
 	string encoding = "\x33" + asString(structEnc) + "\x44";
-	ABI_CHECK(callContractFunction("testNestedArrays()"), encodeArgs(0x20, encoding.size(), encoding));
+	ABI_CHECK(callContractFunction("testNestedArrays()"), encodeArgs());
 	BOOST_REQUIRE_EQUAL(m_logs[0].topics.size(), 2);
 	BOOST_CHECK_EQUAL(m_logs[0].topics[0], dev::keccak256(string("E((uint8,int16)[2][][3])")));
 	BOOST_CHECK_EQUAL(m_logs[0].topics[1], dev::keccak256(asString(structEnc)));
@@ -13783,14 +13780,12 @@ BOOST_AUTO_TEST_CASE(abi_encodePackedV2_arrayOfStrings)
 				x[0] = "abc";
 				x[1] = "0123456789012345678901234567890123456789";
 			}
-			function testStorage() public returns (bytes memory) {
+			function testStorage() public {
 				emit E(x);
-				return abi.encodePacked(uint8(0x33), x, uint8(0x44));
 			}
-			function testMemory() public returns (bytes memory) {
+			function testMemory() public {
 				string[] memory y = x;
 				emit E(y);
-				return abi.encodePacked(uint8(0x33), y, uint8(0x44));
 			}
 		}
 	)";
@@ -13799,11 +13794,11 @@ BOOST_AUTO_TEST_CASE(abi_encodePackedV2_arrayOfStrings)
 	// This pads to multiple of 32 bytes
 	string encoding = "\x33" + asString(arrayEncoding) + "\x44";
 	BOOST_CHECK_EQUAL(encoding.size(), 2 + 32 * 3);
-	ABI_CHECK(callContractFunction("testStorage()"), encodeArgs(0x20, encoding.size(), encoding));
+	ABI_CHECK(callContractFunction("testStorage()"), encodeArgs());
 	BOOST_REQUIRE_EQUAL(m_logs[0].topics.size(), 2);
 	BOOST_CHECK_EQUAL(m_logs[0].topics[0], dev::keccak256(string("E(string[])")));
 	BOOST_CHECK_EQUAL(m_logs[0].topics[1], dev::keccak256(asString(arrayEncoding)));
-	ABI_CHECK(callContractFunction("testMemory()"), encodeArgs(0x20, encoding.size(), encoding));
+	ABI_CHECK(callContractFunction("testMemory()"), encodeArgs());
 	BOOST_REQUIRE_EQUAL(m_logs[0].topics.size(), 2);
 	BOOST_CHECK_EQUAL(m_logs[0].topics[0], dev::keccak256(string("E(string[])")));
 	BOOST_CHECK_EQUAL(m_logs[0].topics[1], dev::keccak256(asString(arrayEncoding)));
