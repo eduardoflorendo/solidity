@@ -1375,6 +1375,21 @@ bool ExpressionCompiler::visit(MemberAccess const& _memberAccess)
 			setLValue<MemoryItem>(_memberAccess, *_memberAccess.annotation().type);
 			break;
 		}
+		case DataLocation::CallData:
+		{
+			solUnimplementedAssert(!type.isDynamicallyEncoded(), "");
+			m_context << type.calldataOffsetOfMember(member) << Instruction::ADD;
+			if (_memberAccess.annotation().type->isValueType())
+			{
+				CompilerUtils(m_context).loadFromMemoryDynamic(
+					*_memberAccess.annotation().type,
+					true,
+					true,
+					false
+				);
+			}
+			break;
+		}
 		default:
 			solAssert(false, "Illegal data location for struct.");
 		}

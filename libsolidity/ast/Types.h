@@ -827,6 +827,8 @@ public:
 	std::string richIdentifier() const override;
 	bool operator==(Type const& _other) const override;
 	unsigned calldataEncodedSize(bool _padded) const override;
+	// Offset of member in calldata. Does not work for recursive or dynamically encoded types.
+	unsigned calldataOffsetOfMember(std::string const& _name) const;
 	bool isDynamicallyEncoded() const override;
 	u256 memorySize() const;
 	u256 storageSize() const override;
