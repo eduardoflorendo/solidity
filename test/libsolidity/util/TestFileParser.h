@@ -133,7 +133,7 @@ using ParameterList = std::vector<Parameter>;
  */
 struct FunctionCallExpectations
 {
-	/// Representation of the comma-separated (or empty) list of expectated result values
+	/// Representation of the comma-separated (or empty) list of expected result values
 	/// attached to the function call object. It is checked against the actual result of
 	/// a function call when used in test framework.
 	ParameterList result;
@@ -319,7 +319,12 @@ private:
 	/// if data type is not supported.
 	std::pair<bytes, ABIType> parseABITypeLiteral();
 
-	/// Parses a comment
+	/// Recursively parses an identifier or a tuple definition that contains identifiers
+	/// and / or parentheses like `((uint, uint), (uint, (uint, uint)), uint)`.
+	std::string parseIdentifierOrTuple();
+
+	/// Parses a comment that is defined like this:
+	/// # A nice comment. #
 	std::string parseComment();
 
 	/// Parses the current number literal.

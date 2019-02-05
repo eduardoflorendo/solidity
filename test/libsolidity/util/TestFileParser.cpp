@@ -140,20 +140,33 @@ string TestFileParser::parseFunctionSignature()
 	signature += formatToken(SoltToken::LParen);
 	expect(SoltToken::LParen);
 
-	while (!accept(SoltToken::RParen))
+	string parameters = parseIdentifierOrTuple();
+
+	while (accept(SoltToken::Comma))
 	{
-		signature += m_scanner.currentLiteral();
-		expect(SoltToken::Identifier);
-		while (accept(SoltToken::Comma))
-		{
-			signature += m_scanner.currentLiteral();
-			expect(SoltToken::Comma);
-			signature += m_scanner.currentLiteral();
-			expect(SoltToken::Identifier);
-		}
+		parameters += formatToken(SoltToken::Comma);
+		expect(SoltToken::Comma);
+		if (accept(SoltToken::RParen, true))
+			throw Error(Error::Type::ParserError, "Invalid signature detected: " + signature);
+		parameters += parseIdentifierOrTuple();
 	}
-	signature += formatToken(SoltToken::RParen);
-	expect(SoltToken::RParen);
+	if (accept(SoltToken::Arrow, true))
+		throw Error(Error::Type::ParserError, "Invalid signature detected: " + signature);
+
+	signature += parameters;
+	/// The last `)` could have been consumed already by
+	/// `parseIdentifierOrTuple` and the occurrence of another `)`
+	/// needs to be handled specifically.
+	if (accept(SoltToken::RParen, true))
+	{
+		/// In case the function signature does not declare any parameters,
+		/// its string representation still contains a sinlge `)`, because
+		/// that's the end of recursion in `parseIdentifierOrTuple`.
+		/// If already appended to the parameters, do not append again.
+		const bool isListEmpty = parameters == formatToken(SoltToken::RParen);
+		if (!isListEmpty)
+			signature += formatToken(SoltToken::RParen);
+	}
 	return signature;
 }
 
@@ -243,6 +256,45 @@ pair<bytes, ABIType> TestFileParser::parseABITypeLiteral()
 	{
 		throw Error(Error::Type::ParserError, "Number encoding invalid.");
 	}
+}
+
+string TestFileParser::parseIdentifierOrTuple()
+{
+	string identOrTuple;
+	if (accept(SoltToken::Identifier))
+	{
+		identOrTuple = m_scanner.currentLiteral();
+		expect(SoltToken::Identifier);
+		return identOrTuple;
+	}
+	/// This is the end of recursion.
+	if (accept(SoltToken::RParen, false))
+		return formatToken(SoltToken::RParen);
+
+	bool isTuple = false;
+	if (accept(SoltToken::LParen, true))
+	{
+		identOrTuple += formatToken(SoltToken::LParen);
+		isTuple = true;
+	}
+
+	identOrTuple += parseIdentifierOrTuple();
+	if (identOrTuple == "()")
+		throw Error(Error::Type::ParserError, "Empty tuples are not supported.");
+
+	while (accept(SoltToken::Comma))
+	{
+		identOrTuple += formatToken(SoltToken::Comma);
+		expect(SoltToken::Comma);
+		identOrTuple += parseIdentifierOrTuple();
+	}
+
+	if (isTuple)
+	{
+		identOrTuple += formatToken(SoltToken::RParen);
+		expect(SoltToken::RParen);
+	}
+	return identOrTuple;
 }
 
 string TestFileParser::parseComment()
