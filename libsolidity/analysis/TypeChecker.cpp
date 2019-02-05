@@ -2198,7 +2198,8 @@ bool TypeChecker::visit(IndexAccess const& _access)
 			resultType = make_shared<TypeType>(make_shared<ArrayType>(DataLocation::Memory, typeType.actualType()));
 		else
 		{
-			expectType(*index, IntegerType::uint256());
+			if (!expectType(*index, IntegerType::uint256()))
+				m_errorReporter.fatalTypeError(index->location(), "Index expression cannot be represented as an unsigned integer.");
 			if (auto length = dynamic_cast<RationalNumberType const*>(type(*index).get()))
 				resultType = make_shared<TypeType>(make_shared<ArrayType>(
 					DataLocation::Memory,
